@@ -91,7 +91,16 @@ async def delete_section(section_id: UUID, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Section not found")
     # Optionally delete image files
     await db.delete(section)
+    network = await db.get(Network, section.network_id)
+    if network.total_sections > 0:
+        network.total_sections -= 1
     await db.commit()
+
+    #     # Increment total sections on network
+    # network.total_sections += 1
+    # await db.commit()
+    # await db.refresh(db_section)
+    # return db_section
 
 
 # GET, PUT, DELETE for a single section

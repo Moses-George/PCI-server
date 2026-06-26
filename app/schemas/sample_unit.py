@@ -27,7 +27,7 @@ class SampleUnitBase(BaseModel):
 
 
 class SampleUnitCreate(SampleUnitBase):
-    image_file: bytes  # we'll handle via multipart form
+    image_file: Optional[bytes] = None  # we'll handle via multipart form
 
 
 class SampleUnitUpdate(BaseModel):

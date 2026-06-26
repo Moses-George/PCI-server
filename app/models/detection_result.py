@@ -16,6 +16,6 @@ class DetectionResult(BaseModel):
     quantity = Column(Float, nullable=False)  # count or area
     confidence = Column(Float, nullable=True)
     metrics = Column(JSON, nullable=True)  # {avg_width, length, area, perimeter}
-    normalized_class = Column(String, nullable=False)
+    normalized_class = Column(String, nullable=True)
 
     sample_unit = relationship("SampleUnit", back_populates="detections")

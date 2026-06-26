@@ -1,4 +1,8 @@
-normalized_classes = {"alligator": ["alligator crack"], "linear": [""], "pothole": [""]}
+normalized_classes = {
+    "alligator": ["alligator crack"],
+    "linear": ["Longitudinal Crack", "Transverse Crack"],
+    "pothole": [""],
+}
 
 VALID_DISTRESS_TYPES = list(normalized_classes.keys())
 
@@ -8,13 +12,12 @@ VALID_SEVERITIES = ["low", "medium", "high"]
 
 def normalizeClass(distress_type: str):
     for key, vals in normalized_classes.items():
-        if distress_type.lower() in vals:
+        if distress_type.lower() in list(map(lambda cls: cls.lower(), vals)):
             return key
-        else:
-            return None
+    return None
 
 
-normalized_class = normalizeClass("Alligator Crack")
+normalized_class = normalizeClass("Longitudinal crack")
 print(normalized_class)
 
 

@@ -39,7 +39,7 @@ async def get_networks(db: AsyncSession = Depends(get_db)):
 
 @router.post("/", response_model=NetworkResponse, status_code=status.HTTP_201_CREATED)
 async def create_network(network: NetworkCreate, db: AsyncSession = Depends(get_db)):
-    db_network = Network(**network.dict())
+    db_network = Network(**network.model_dump())
     db.add(db_network)
     await db.commit()
     await db.refresh(db_network)
