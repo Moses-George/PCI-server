@@ -12,8 +12,12 @@ class PCIHistory(BaseModel):
         nullable=False,
     )
     final_pci = Column(Float, nullable=False)
-    rating = Column(String, nullable=False)
+    condition_rating = Column(String, nullable=False)
+    max_cdv = Column(Float, nullable=False)
+    tdv_start = Column(Float, nullable=False)
     deduct_values = Column(JSON, nullable=True)
-    cdv = Column(Float, nullable=True)
+    observations = Column(JSON, nullable=False)
+    all_cdvs = Column(JSON, nullable=False)
+    all_tdvs = Column(JSON, nullable=False)
 
     section = relationship("Section", back_populates="pci_history")

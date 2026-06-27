@@ -13,9 +13,9 @@ class DetectionResult(BaseModel):
     )
     distress_type = Column(String, nullable=False)
     severity = Column(String, nullable=False)  # L, M, H
-    quantity = Column(Float, nullable=False)  # count or area
+    quantity = Column(Float, nullable=True)  # count or area
     confidence = Column(Float, nullable=True)
-    metrics = Column(JSON, nullable=True)  # {avg_width, length, area, perimeter}
+    metrics = Column(JSON, nullable=True)  # {avg_width, length, area, perimeter, bbox}
     normalized_class = Column(String, nullable=True)
 
     sample_unit = relationship("SampleUnit", back_populates="detections")

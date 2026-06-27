@@ -20,13 +20,13 @@ from app.schemas.sample_unit import (
     SampleUnitUpdate,
     SampleUnitResponse,
 )
-from app.services.yolo_simulator import simulate_yolo_processing
-
+from app.services.pci.pci_utilities import normalizeClass
 import logging
+
+from app.tasks.yolo_tasks import run_yolo_inference
 
 logging.basicConfig(level=logging.INFO)
 
-from app.services.pci_utilities import normalizeClass
 
 router = APIRouter(prefix="/sample-units", tags=["Sample Units"])
 
@@ -105,7 +105,7 @@ async def create_sample_unit(
         filepath = os.path.join(upload_dir, filename)
         with open(filepath, "wb") as buffer:
             shutil.copyfileobj(image_file.file, buffer)
-        original_image_path = filepath
+        original_image_path = os.path.join(os.getcwd(), filepath)
 
     # Normalize distress type
     normalized_class = normalizeClass(distress_type) if distress_type else None
@@ -129,7 +129,7 @@ async def create_sample_unit(
 
     if image_file and image_file.filename:
         # Run YOLO simulation (creates detections)
-        await simulate_yolo_processing(db_sample.id, db)
+        run_yolo_inference.delay(str(db_sample.id))
 
     # ✅ Re‑fetch the sample unit with detections eagerly loaded
     stmt = (
@@ -213,7 +213,7 @@ async def update_sample_unit(
         with open(filepath, "wb") as buffer:
             shutil.copyfileobj(image_file.file, buffer)
 
-        sample.original_image = filepath
+        sample.original_image = os.path.join(os.getcwd(), filepath)
         sample.predicted_image = None  # will be set by inference
 
         # Delete all existing detection results for this sample unit
@@ -224,7 +224,7 @@ async def update_sample_unit(
         )
 
         # Run inference on the new image (simulated YOLO)
-        await simulate_yolo_processing(sample_unit_id, db)
+        run_yolo_inference.delay(str(sample.id))
 
     # 4. Commit changes
     await db.commit()

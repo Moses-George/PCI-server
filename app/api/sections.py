@@ -15,7 +15,7 @@ from app.schemas.section import (
     SectionResponse,
     SectionWithSUsResponse,
 )
-from app.services.pci_utilities import groupAndCalcDensity
+from app.services.pci.pci_utilities import groupAndCalcDensity
 
 router = APIRouter(prefix="/sections", tags=["Sections"])
 

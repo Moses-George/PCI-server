@@ -2,15 +2,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
-
 from app.core.config import settings
 from app.api import networks, sections, sample_units, pci, reports
-
-from app.services.pci import PCICalculator
+from app.services.pci.pci_calculator import PCICalculator
+from ultralytics import YOLO
 
 app = FastAPI(title="Pavement Management API", version="1.0.0")
 
-pci_calculator = PCICalculator.get_instance()
+PCI_CAlCULATOR = PCICalculator.get_instance()
 
 # CORS
 app.add_middleware(

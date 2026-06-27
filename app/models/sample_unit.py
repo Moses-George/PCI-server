@@ -29,6 +29,8 @@ class SampleUnit(BaseModel):
     note = Column(String, nullable=True)
     normalized_class = Column(String, nullable=True)
 
+    inference_status = Column(String, default="pending", server_default="pending")
+
     section = relationship("Section", back_populates="sample_units")
     detections = relationship(
         "DetectionResult", back_populates="sample_unit", cascade="all, delete-orphan"

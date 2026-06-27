@@ -9,7 +9,7 @@ from app.schemas.detection_result import (
 
 class DistressInput(BaseModel):
     distress_type: str
-    severity: str  # L, M, H
+    severity: str  # low, medium, high
     quantity: float
 
 
@@ -41,6 +41,7 @@ class SampleUnitUpdate(BaseModel):
     severity: Optional[str] = None
     pothole_depth: Optional[float] = None
     note: Optional[str] = None
+    inference_status: str
 
 
 class SampleUnitResponse(SampleUnitBase):

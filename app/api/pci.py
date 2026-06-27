@@ -11,7 +11,7 @@ from app.models.sample_unit import SampleUnit
 from app.models.detection_result import DetectionResult
 from app.models.pci_history import PCIHistory
 from app.schemas.pci import PCIResponse, PCIHistoryResponse
-from app.services.pci_calculator import calculate_pci_for_section
+# from app.services.pci.pci_calculator import calculate_pci_for_section
 
 router = APIRouter(prefix="/pci", tags=["PCI"])
 
@@ -37,27 +37,27 @@ async def get_latest_pci(section_id: UUID, db: AsyncSession = Depends(get_db)):
         )
 
     # Otherwise compute fresh (and store)
-    pci_result = await calculate_pci_for_section(section_id, db)
+    # pci_result = await calculate_pci_for_section(section_id, db)
 
-    # Save to history
-    pci_history = PCIHistory(
-        section_id=section_id,
-        final_pci=pci_result["final_pci"],
-        rating=pci_result["rating"],
-        deduct_values=pci_result["deduct_values"],
-        cdv=pci_result["cdv"],
-    )
-    db.add(pci_history)
-    await db.commit()
+    # # Save to history
+    # pci_history = PCIHistory(
+    #     section_id=section_id,
+    #     final_pci=pci_result["final_pci"],
+    #     rating=pci_result["rating"],
+    #     deduct_values=pci_result["deduct_values"],
+    #     cdv=pci_result["cdv"],
+    # )
+    # db.add(pci_history)
+    # await db.commit()
 
-    return PCIResponse(
-        section_id=section_id,
-        final_pci=pci_result["final_pci"],
-        rating=pci_result["rating"],
-        deduct_values=pci_result["deduct_values"],
-        cdv=pci_result["cdv"],
-        calculated_at=datetime.utcnow(),
-    )
+    # return PCIResponse(
+    #     section_id=section_id,
+    #     final_pci=pci_result["final_pci"],
+    #     rating=pci_result["rating"],
+    #     deduct_values=pci_result["deduct_values"],
+    #     cdv=pci_result["cdv"],
+    #     calculated_at=datetime.utcnow(),
+    # )
 
 
 @router.get("/section/{section_id}/history", response_model=List[PCIHistoryResponse])
