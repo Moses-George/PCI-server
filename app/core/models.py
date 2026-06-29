@@ -17,4 +17,5 @@ def load_models():
 
     from ultralytics import YOLO
     BBOX_MODEL = YOLO(BBOX_MODEL_PATH)
+    # BBOX_MODEL = None
     logger.info(f"Loaded BBOX model from {BBOX_MODEL_PATH}")

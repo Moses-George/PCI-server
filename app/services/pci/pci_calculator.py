@@ -119,7 +119,7 @@ class PCICalculator:
         Parameters
         ----------
         observations : list of dicts, each with keys:
-            distress  : str   -- "alligator" | "long_trans" | "pothole"
+            distress_type  : str   -- "alligator" | "linear" | "pothole"
             severity  : str   -- "low" | "medium" | "high"
             density   : float -- density % (> 0)
 

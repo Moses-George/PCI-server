@@ -1,15 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-import os
-from app.core.config import settings
 from app.api import networks, sections, sample_units, pci, reports
-from app.services.pci.pci_calculator import PCICalculator
-from ultralytics import YOLO
+# from app.services.pci.pci_calculator import PCICalculator
 
 app = FastAPI(title="Pavement Management API", version="1.0.0")
 
-PCI_CAlCULATOR = PCICalculator.get_instance()
+# PCI_CAlCULATOR = PCICalculator.get_instance()
 
 # CORS
 app.add_middleware(
@@ -28,8 +25,8 @@ app.include_router(pci.router)
 app.include_router(reports.router)
 
 # Serve uploaded images
-os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
+# os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+# app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
 
 @app.get("/")

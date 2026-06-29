@@ -5,6 +5,7 @@ from typing import List
 from uuid import UUID
 from sqlalchemy.orm import selectinload
 from app.core.database import get_db
+from app.models.pci_history import PCIHistory
 from app.models.sample_unit import SampleUnit
 from app.models.section import Section
 from app.models.network import Network
@@ -15,7 +16,10 @@ from app.schemas.section import (
     SectionResponse,
     SectionWithSUsResponse,
 )
-from app.services.pci.pci_utilities import groupAndCalcDensity
+from app.core.pci import get_pci_calculator
+from app.services.image_service import delete_images_for_ids
+
+# from app.services.pci.pci_utilities import groupAndCalcDensity
 
 router = APIRouter(prefix="/sections", tags=["Sections"])
 
@@ -31,7 +35,10 @@ async def get_section(section_id: UUID, db: AsyncSession = Depends(get_db)):
     stmt = (
         select(Section)
         .where(Section.id == section_id)
-        .options(selectinload(Section.sample_units).selectinload(SampleUnit.detections))
+        .options(
+            selectinload(Section.sample_units).selectinload(SampleUnit.detections),
+            selectinload(Section.sample_units).selectinload(SampleUnit.images),
+        )
     )
     result = await db.execute(stmt)
     section = result.scalar_one_or_none()
@@ -89,24 +96,25 @@ async def delete_section(section_id: UUID, db: AsyncSession = Depends(get_db)):
     section = await db.get(Section, section_id)
     if not section:
         raise HTTPException(status_code=404, detail="Section not found")
-    # Optionally delete image files
+
+    # Collect sample unit IDs before cascade fires
+    stmt = select(SampleUnit.id).where(SampleUnit.section_id == section_id)
+    result = await db.execute(stmt)
+    sample_unit_ids = result.scalars().all()
+
+    # Clean Cloudinary + image DB rows
+    await delete_images_for_ids(db, sample_unit_ids)
     await db.delete(section)
     network = await db.get(Network, section.network_id)
     if network.total_sections > 0:
         network.total_sections -= 1
     await db.commit()
 
-    #     # Increment total sections on network
-    # network.total_sections += 1
-    # await db.commit()
-    # await db.refresh(db_section)
-    # return db_section
-
 
 # GET, PUT, DELETE for a single section
 
 
-@router.get("/{section_id}/calc_pci", response_model=List[PCIResponse])
+@router.get("/{section_id}/calc_pci", response_model=PCIResponse)
 async def calc_section_pci(section_id: UUID, db: AsyncSession = Depends(get_db)):
     section = await db.get(Section, section_id)
     if not section:
@@ -151,5 +159,22 @@ async def calc_section_pci(section_id: UUID, db: AsyncSession = Depends(get_db))
                 }
             )
 
-    groupWithDensity = groupAndCalcDensity(predictions, section.area)
-    return groupWithDensity
+    # groupWithDensity = groupAndCalcDensity(predictions, section.area)
+    # pci_result = PCI_CAlCULATOR.compute_pci(groupWithDensity)
+
+    # pci_history = PCIHistory(
+    #     section_id=section_id,
+    #     final_pci=pci_result["final_pci"],
+    #     condition_rating=pci_result["condition_rating"],
+    #     max_cdv=pci_result["max_cdv"],
+    #     tdv_start=pci_result["tdv_start"],
+    #     deduct_values=pci_result["deduct_values"],
+    #     observations=pci_result["observations"],
+    #     all_cdvs=pci_result["all_cdvs"],
+    #     all_tdvs=pci_result["all_tdvs"],
+    # )
+
+    # db.add(pci_history)
+    # await db.commit()
+    # await db.refresh(pci_history)
+    # return pci_history

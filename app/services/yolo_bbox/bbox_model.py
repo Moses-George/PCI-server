@@ -5,7 +5,7 @@ import time
 from app.core.models import BBOX_MODEL, BBOX_MODEL_PATH
 import cv2
 from app.services.yolo_bbox.width_estimator import CrackWidthEstimator
-from app.utils.config_bbox import CLASS_NAMES, bbox_cfg
+from app.services.yolo_bbox.config_bbox import CLASS_NAMES, bbox_cfg
 
 
 @dataclass
@@ -23,7 +23,7 @@ class DistressRecord:
     # ------------------------------------------------------------------
 
 
-def infer_image_bbox_model(image_path, px_per_mm: float):
+def infer_image_bbox_model(image, px_per_mm: float):
     """
     Run the full pipeline on a single BGR image.
 
@@ -32,15 +32,18 @@ def infer_image_bbox_model(image_path, px_per_mm: float):
     annotated_image : np.ndarray
     result          : DetectionResult
     """
+    if image is None:
+        raise ValueError("Could not load image")
     if not BBOX_MODEL_PATH:
-        return
+        raise RuntimeError("BBOX_MODEL PATH does not exist")
+    if BBOX_MODEL is None:
+        raise RuntimeError("BBOX_MODEL not loaded at worker startup")
 
     est = CrackWidthEstimator(px_per_mm)
-
     t0 = time.time()
-    image_bgr = cv2.imread(image_path)
-    if image_bgr is None:
-        raise ValueError(f"Could not load image at {image_path}")
+
+    # ── image is already a numpy array — don't call cv2.imread ──
+    image_bgr = image  # ← remove cv2.imread(image)
     h, w = image_bgr.shape[:2]
     # annotated = image_bgr.copy()
 
@@ -59,7 +62,7 @@ def infer_image_bbox_model(image_path, px_per_mm: float):
     records: List[DistressRecord] = []
 
     if yolo_results and yolo_results[0].boxes is not None:
-        print("yes")
+        # print("yes")
         boxes = yolo_results[0].boxes
         # print(boxes)
         xyxy = boxes.xyxy.cpu().numpy()  # [N, 4]
@@ -71,10 +74,13 @@ def infer_image_bbox_model(image_path, px_per_mm: float):
             conf_val = float(confs[i])
             cls_id = int(clsids[i])
             cls_name = CLASS_NAMES[cls_id] if cls_id < len(CLASS_NAMES) else "unknown"
+            print(cls_name)
 
             # ── Phase II: Width estimation ────────────────────────
             crop = image_bgr[max(0, y1) : min(h, y2), max(0, x1) : min(w, x2)]
             width_result = est.estimate(crop, class_name=cls_name)
+            print("width_result")
+            print(width_result)
 
             width_mm = width_result["width_mm"]
             length_mm = width_result["length_mm"]

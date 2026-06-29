@@ -26,7 +26,6 @@ class PCIResponse(BaseModel):
     observations: List[PCIObservation]
     all_cdvs: List[float]
     all_tdvs: List[float]
-    calculated_at: datetime
 
 
 class PCIHistoryResponse(PCIResponse):

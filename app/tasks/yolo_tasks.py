@@ -1,7 +1,9 @@
+from collections import Counter 
 import logging
 from pathlib import Path
-from celery.exceptions import SoftTimeLimitExceeded
 from app.core.celery_app import celery_app
+from app.core.cloudinary_client import upload_numpy_image_to_cloudinary_sync
+from app.services.image_service import save_image_record_sync
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +42,10 @@ def run_yolo_inference(self, sample_unit_id: str):
     from app.services.pci.pci_utilities import normalizeClass
     from app.services.yolo_bbox.bbox_model import infer_image_bbox_model
     import cv2
+    from sqlalchemy import select
+    from app.models.image import Image
+    import requests
+    import numpy as np
 
     logger.info(f"Starting inference for sample_unit_id={sample_unit_id}")
 
@@ -49,24 +55,60 @@ def run_yolo_inference(self, sample_unit_id: str):
             if not sample:
                 return {"status": "error", "detail": "Sample unit not found"}
 
+            # Get original image record
+            original = db.execute(
+                select(Image).where(
+                    Image.sample_unit_id == sample.id,
+                    Image.is_original == True,
+                )
+            ).scalar_one_or_none()
+
+            if not original:
+                _mark_failed(sample_unit_id)
+                return {"status": "error", "detail": "No original image record"}
+
             # Mark as processing
             sample.inference_status = "processing"
             db.commit()
 
+            # Download image bytes from Cloudinry public URL
+            response = requests.get(original.public_url, timeout=30)
+            response.raise_for_status()
+            image_array = np.frombuffer(response.content, np.uint8)
+            image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+
+            if image is None:
+                raise ValueError("Could not decode image from Cloudinry")
+
             # Run YOLO (blocking is fine here — we're in a worker process)
             detections, records, annotated = infer_image_bbox_model(
-                sample.original_image, sample.pixel_to_mm_factor
+                image, sample.pixel_to_mm_factor
             )
 
-            if len(detections) == 0:
-                # sample.predicted_image = annotated_path
+            if not records:
+                print(detections)
+                print(records)
+                print("No detections")
                 sample.inference_status = "done"
                 db.commit()
                 return {"status": "done", "sample_unit_id": sample_unit_id}
 
-            # Save annotated image
-            # annotated_path = sample.original_image.replace("original", "predicted")
-            # cv2.imwrite(annotated_path, annotated)
+            annotated_result = upload_numpy_image_to_cloudinary_sync(
+                image_array=annotated,
+                original_filename=original.original_filename,
+                folder="predicted",
+            )
+
+            save_image_record_sync(
+                db,
+                sample_unit_id=sample.id,
+                result=annotated_result,
+                is_original=False,
+                is_annotated=True,
+            )
+
+            # Count occurrences of each class across all records
+            class_counts = Counter(r.class_name for r in records)
 
             # Persist detections
             for record in records:
@@ -74,7 +116,7 @@ def run_yolo_inference(self, sample_unit_id: str):
                     sample_unit_id=sample.id,
                     distress_type=record.class_name,
                     severity=record.severity,
-                    quantity=record.count,
+                    quantity=class_counts[record.class_name],
                     confidence=record.confidence,
                     normalized_class=normalizeClass(record.class_name),
                     metrics={
@@ -91,12 +133,6 @@ def run_yolo_inference(self, sample_unit_id: str):
             db.commit()
 
             return {"status": "done", "sample_unit_id": sample_unit_id}
-
-    except SoftTimeLimitExceeded:
-        logger.error(f"Soft time limit exceeded for {sample_unit_id}")
-        _mark_failed(sample_unit_id)
-        # Don't retry on timeout — the image is probably corrupt/too large
-        return {"status": "failed", "detail": "Inference timed out"}
 
     except Exception as exc:
         logger.exception(f"Inference failed for {sample_unit_id}: {exc}")

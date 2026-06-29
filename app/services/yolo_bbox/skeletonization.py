@@ -3,7 +3,7 @@ import numpy as np
 from skimage.filters import sato 
 from skimage.morphology import skeletonize as ski_skeletonize
 import cv2
-from app.utils.config_bbox import bbox_cfg
+from app.services.yolo_bbox.config_bbox import bbox_cfg
 
 SEVERITY_LOW_MAX = 5.0  # mm  (paper Table 1)
 SEVERITY_MEDIUM_MAX = 20.0  # mm

@@ -13,14 +13,13 @@ class SampleUnit(BaseModel):
     )
     name = Column(String, nullable=False)
     area = Column(Float, nullable=True)
-    is_random = Column(Boolean, default=True)
     distress_inputs = Column(JSON, nullable=True)  # manual override
     gps_coords = Column(JSON, nullable=True)
     pixel_to_mm_factor = Column(Float, nullable=True)  # override
 
     # Image paths
-    original_image = Column(String, nullable=True)
-    predicted_image = Column(String, nullable=True)
+    # original_image = Column(String, nullable=True)
+    # predicted_image = Column(String, nullable=True)
 
     # User‑provided fields
     distress_type = Column(String, nullable=True)
@@ -30,6 +29,13 @@ class SampleUnit(BaseModel):
     normalized_class = Column(String, nullable=True)
 
     inference_status = Column(String, default="pending", server_default="pending")
+
+    images = relationship(
+        "Image",
+        back_populates="sample_unit",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
     section = relationship("Section", back_populates="sample_units")
     detections = relationship(

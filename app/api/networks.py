@@ -7,6 +7,7 @@ from uuid import UUID
 
 from app.core.database import get_db
 from app.models.network import Network
+from app.models.sample_unit import SampleUnit
 from app.models.section import Section
 from app.schemas.network import (
     NetworkCreate,
@@ -14,6 +15,7 @@ from app.schemas.network import (
     NetworkResponse,
     NetworkWithSectionsResponse,
 )
+from app.services.image_service import delete_images_for_ids
 
 router = APIRouter(prefix="/networks", tags=["Networks"])
 
@@ -87,5 +89,16 @@ async def delete_network(network_id: UUID, db: AsyncSession = Depends(get_db)):
     network = await db.get(Network, network_id)
     if not network:
         raise HTTPException(status_code=404, detail="Network not found")
+
+    # Collect sample unit IDs across all sections
+    stmt = (
+        select(SampleUnit.id)
+        .join(Section, SampleUnit.section_id == Section.id)
+        .where(Section.network_id == network_id)
+    )
+    result = await db.execute(stmt)
+    sample_unit_ids = result.scalars().all()
+
+    await delete_images_for_ids(db, sample_unit_ids)
     await db.delete(network)
     await db.commit()

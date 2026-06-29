@@ -5,13 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from typing import List, Optional
 from uuid import UUID
-import os
-import shutil
 from datetime import datetime
 from sqlalchemy.orm import selectinload
 
+from app.core.cloudinary_client import upload_image_to_cloudinary
 from app.core.database import get_db
-from app.core.config import settings
 from app.models.detection_result import DetectionResult
 from app.models.sample_unit import SampleUnit
 from app.models.section import Section
@@ -19,6 +17,10 @@ from app.schemas.sample_unit import (
     SampleUnitCreate,
     SampleUnitUpdate,
     SampleUnitResponse,
+)
+from app.services.image_service import (
+    delete_images_for_ids,
+    save_image_record,
 )
 from app.services.pci.pci_utilities import normalizeClass
 import logging
@@ -45,23 +47,7 @@ router = APIRouter(prefix="/sample-units", tags=["Sample Units"])
 #     return result.scalars().all()
 
 
-from sqlalchemy.orm import selectinload
-
-
-@router.post(
-    "/", response_model=SampleUnitResponse, status_code=status.HTTP_201_CREATED
-)
-async def create_sample_unit(
-    section_id: UUID = Form(...),
-    name: str = Form(...),
-    distress_type: Optional[str] = Form(None),
-    severity: Optional[str] = Form(None),
-    pothole_depth: Optional[float] = Form(None),
-    note: Optional[str] = Form(None),
-    pixel_to_mm_factor: Optional[float] = Form(None),
-    image_file: Optional[UploadFile] = File(None),
-    db: AsyncSession = Depends(get_db),
-):
+def validate(image_file: UploadFile | None, distress_type, severity):
     # Validation: either image or distress_type must be provided
     # Clean and normalize optional fields
     distress_type = distress_type.strip() if distress_type else None
@@ -88,24 +74,43 @@ async def create_sample_unit(
             detail="Please select a severity level for the distress.",
         )
 
+    return distress_type, severity, has_file, has_manual
+
+
+@router.post(
+    "/", response_model=SampleUnitResponse, status_code=status.HTTP_201_CREATED
+)
+async def create_sample_unit(
+    section_id: UUID = Form(...),
+    name: str = Form(...),
+    distress_type: Optional[str] = Form(None),
+    severity: Optional[str] = Form(None),
+    pothole_depth: Optional[float] = Form(None),
+    note: Optional[str] = Form(None),
+    pixel_to_mm_factor: Optional[float] = Form(None),
+    image_file: Optional[UploadFile] = File(None),
+    db: AsyncSession = Depends(get_db),
+):
+    distress_type, severity, has_file, has_manual = validate(
+        image_file, distress_type, severity
+    )
+
     # Verify section exists
     section = await db.get(Section, section_id)
     if not section:
         raise HTTPException(status_code=404, detail="Section not found")
 
     # Handle optional image upload
-    original_image_path = None
-    if image_file and image_file.filename:
-        upload_dir = settings.UPLOAD_DIR
-        os.makedirs(upload_dir, exist_ok=True)
-        file_ext = os.path.splitext(image_file.filename)[1]
-        filename = (
-            f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex}{file_ext}"
-        )
-        filepath = os.path.join(upload_dir, filename)
-        with open(filepath, "wb") as buffer:
-            shutil.copyfileobj(image_file.file, buffer)
-        original_image_path = os.path.join(os.getcwd(), filepath)
+    cloudinary_result = None
+    if has_file:
+        try:
+            cloudinary_result = await upload_image_to_cloudinary(
+                image_file, folder="originals"
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        except RuntimeError as e:
+            raise HTTPException(status_code=502, detail=str(e))
 
     # Normalize distress type
     normalized_class = normalizeClass(distress_type) if distress_type else None
@@ -119,7 +124,6 @@ async def create_sample_unit(
         pothole_depth=pothole_depth,
         note=note,
         pixel_to_mm_factor=pixel_to_mm_factor or section.pixel_to_mm_factor,
-        original_image=original_image_path,
         normalized_class=normalized_class,
     )
     db.add(db_sample)
@@ -127,15 +131,19 @@ async def create_sample_unit(
     await db.commit()
     await db.refresh(db_sample)  # load scalar fields
 
-    if image_file and image_file.filename:
-        # Run YOLO simulation (creates detections)
+    # ── Save image record ─────────────────────────────────────────────────────
+    if has_file and cloudinary_result:
+        await save_image_record(db, db_sample.id, cloudinary_result, is_original=True)
         run_yolo_inference.delay(str(db_sample.id))
 
     # ✅ Re‑fetch the sample unit with detections eagerly loaded
     stmt = (
         select(SampleUnit)
         .where(SampleUnit.id == db_sample.id)
-        .options(selectinload(SampleUnit.detections))
+        .options(
+            selectinload(SampleUnit.detections),
+            selectinload(SampleUnit.images),
+        )
     )
     result = await db.execute(stmt)
     db_sample = result.scalar_one()
@@ -169,6 +177,10 @@ async def update_sample_unit(
     image_file: Optional[UploadFile] = File(None),
     db: AsyncSession = Depends(get_db),
 ):
+
+    distress_type, severity, has_file, has_manual = validate(
+        image_file, distress_type, severity
+    )
     # 1. Fetch existing sample unit
     sample = await db.get(SampleUnit, sample_unit_id)
     if not sample:
@@ -198,31 +210,25 @@ async def update_sample_unit(
 
     # 3. Handle image replacement
     if image_file and image_file.filename:
-        # Delete old image file if it exists on disk
-        if sample.original_image and os.path.exists(sample.original_image):
-            os.remove(sample.original_image)
-
-        # Save new image
-        upload_dir = settings.UPLOAD_DIR
-        os.makedirs(upload_dir, exist_ok=True)
-        file_ext = os.path.splitext(image_file.filename)[1]
-        filename = (
-            f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex}{file_ext}"
-        )
-        filepath = os.path.join(upload_dir, filename)
-        with open(filepath, "wb") as buffer:
-            shutil.copyfileobj(image_file.file, buffer)
-
-        sample.original_image = os.path.join(os.getcwd(), filepath)
-        sample.predicted_image = None  # will be set by inference
-
+        await delete_images_for_ids(db, [sample.id])
         # Delete all existing detection results for this sample unit
         await db.execute(
             delete(DetectionResult).where(
                 DetectionResult.sample_unit_id == sample_unit_id
             )
         )
-
+        try:
+            cloudinary_result = await upload_image_to_cloudinary(
+                image_file, folder="originals"
+            )
+            if cloudinary_result:
+                await save_image_record(
+                    db, sample.id, cloudinary_result, is_original=True
+                )
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        except RuntimeError as e:
+            raise HTTPException(status_code=502, detail=str(e))
         # Run inference on the new image (simulated YOLO)
         run_yolo_inference.delay(str(sample.id))
 
@@ -234,7 +240,10 @@ async def update_sample_unit(
     stmt = (
         select(SampleUnit)
         .where(SampleUnit.id == sample_unit_id)
-        .options(selectinload(SampleUnit.detections))
+        .options(
+            selectinload(SampleUnit.detections),
+            selectinload(SampleUnit.images),
+        )
     )
     result = await db.execute(stmt)
     sample = result.scalar_one()
@@ -248,6 +257,7 @@ async def delete_sample_unit(sample_unit_id: UUID, db: AsyncSession = Depends(ge
     if not sample:
         raise HTTPException(status_code=404, detail="Sample unit not found")
     # Optionally delete image files
+    await delete_images_for_ids(db, [sample_unit_id])  # cleans R2 + image rows
     await db.delete(sample)
     section = await db.get(Section, sample.section_id)
     if section.sample_unit_count > 0:
