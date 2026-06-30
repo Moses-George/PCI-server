@@ -27,12 +27,13 @@ from app.services.pci.pci_utilities import (
 )
 import numpy as np
 
-# Default path: models.json lives next to this file.
-# _DEFAULT_MODELS_PATH = os.path.join(os.path.dirname(__file__), "models.json")
-_DEFAULT_MODELS_PATH = os.path.join(
+_DEFAULT_DISTRESS_MODELS_PATH = os.path.join(
     os.getcwd(), "app", "fitted_polynomial", "distress_models.json"
 )
-print(os.path.exists(_DEFAULT_MODELS_PATH))
+_DEFAULT_CDV_MODELS_PATH = os.path.join(
+    os.getcwd(), "app", "fitted_polynomial", "cdvs_model.json"
+)
+# print(os.path.exists(_DEFAULT_MODELS_PATH))
 
 # ---------------------------------------------------------------------------
 # Core class
@@ -42,24 +43,23 @@ print(os.path.exists(_DEFAULT_MODELS_PATH))
 class PCICalculator:
     """
     Production deduct-value and PCI calculator.
-
-    Parameters
-    ----------
-    models_path : str
-        Path to the JSON file produced by save_models.py.
-        Defaults to models.json in the same directory as this file.
-
     The models are loaded exactly once on first instantiation (or explicitly
     via load_models). After that every call is pure arithmetic -- no I/O,
     no fitting, no imports of numpy beyond what is already loaded.
     """
-
     _singleton = None  # optional module-level cache (see get_instance())
 
-    def __init__(self, models_path: str = _DEFAULT_MODELS_PATH):
+    def __init__(
+        self,
+        models_path: str = _DEFAULT_DISTRESS_MODELS_PATH,
+        cdv_models_path: str = _DEFAULT_CDV_MODELS_PATH,
+    ):
         self._models_path = models_path
+        self._cdv_models_path = cdv_models_path
         self._polys: dict = {}  # {distress_type: {severity: np.poly1d}}
+        self._cdv_polys: dict = {}  # {q: np.poly1d}
         self._load_models()
+        self._load_cdv_models()
 
     # ------------------------------------------------------------------
     # Loading
@@ -79,6 +79,20 @@ class PCICalculator:
             self._polys[distress_type] = {}
             for sev, data in severities.items():
                 self._polys[distress_type][sev] = np.poly1d(data["coefficients"])
+
+    def _load_cdv_models(self):
+        """Load digitized CDV correction curves (one polynomial per q)."""
+        if not os.path.exists(self._cdv_models_path):
+            raise FileNotFoundError(
+                f"CDV model file not found: {self._cdv_models_path}"
+            )
+        with open(self._cdv_models_path) as f:
+            raw = json.load(f)
+
+        self._cdv_polys = {
+            int(q_str): np.poly1d(data["coefficients"]) for q_str, data in raw.items()
+        }
+        self._max_q = max(self._cdv_polys.keys())
 
     # ------------------------------------------------------------------
     # Core query
@@ -122,16 +136,6 @@ class PCICalculator:
             distress_type  : str   -- "alligator" | "linear" | "pothole"
             severity  : str   -- "low" | "medium" | "high"
             density   : float -- density % (> 0)
-
-        Returns
-        -------
-        dict with keys:
-            pci           : float  -- 0-100
-            condition     : str    -- e.g. "Fair"
-            cdv           : float  -- corrected deduct value
-            tdv           : float  -- total deduct value
-            deduct_values : list[float] -- individual DVs (sorted descending)
-            observations  : list[dict] -- echoed back with 'deduct_value' filled in
         """
         if not observations:
             return {
@@ -212,37 +216,18 @@ class PCICalculator:
 
     def _corrected_deduct_value(self, tdv: float, q: int) -> float:
         """
-        Approximate the corrected deduct value from the ASTM correction curves
-        (Fig. X3.26 for asphalt).
+        Corrected deduct value from digitized ASTM Fig. X3.26 curves.
 
-        The standard provides this as a family of graphical curves (one per q
-        value). We use a widely-adopted analytical approximation that fits
-        those curves closely for asphalt:
-
-            CDV = a * ln(TDV) + b
-
-        where a and b are empirically derived per q level. For a production
-        system where millimetre accuracy matters, digitize Fig. X3.26 the same
-        way as the distress curves and replace this function with a polynomial
-        lookup -- the structure is identical.
+        Each q level (1..7, or however many you digitized) has its own
+        fitted polynomial in TDV. q values above the max digitized curve
+        are clamped to the highest available curve, matching ASTM practice
+        of treating q >= 8 the same as the q=8 curve.
         """
-        # Coefficients approximating the ASTM asphalt CDV curves for q = 1..8+
-        # Source: analytical fits widely used in pavement management literature.
-        cdv_params = {
-            1: (17.677, -3.8),
-            2: (14.036, -0.8),
-            3: (11.815, 1.7),
-            4: (10.209, 3.4),
-            5: (9.078, 4.7),
-            6: (8.249, 5.7),
-            7: (7.618, 6.5),
-            8: (7.112, 7.1),
-        }
-        q = max(1, min(q, 8))
         if tdv <= 0:
             return 0.0
-        a, b = cdv_params[q]
-        cdv = a * math.log(tdv) + b
+        q_clamped = max(1, min(q, self._max_q))
+        poly = self._cdv_polys[q_clamped]
+        cdv = float(poly(tdv))
         return clamp(cdv)
 
     # ------------------------------------------------------------------
@@ -267,23 +252,20 @@ class PCICalculator:
     # ------------------------------------------------------------------
 
     @classmethod
-    def get_instance(cls, models_path: str = _DEFAULT_MODELS_PATH):
+    def get_instance(
+        cls,
+        models_path: str = _DEFAULT_DISTRESS_MODELS_PATH,
+        cdv_models_path: str = _DEFAULT_CDV_MODELS_PATH,
+    ):
         """
         Return a shared singleton instance.
 
         In a web server (Flask, Django, FastAPI) call this once at startup
         or at the module level, rather than creating a new instance per
         request:
-
-            # In your Flask app factory or Django AppConfig.ready():
-            from deduct_calculator import DeductValueCalculator
-            calc = PCICalculator.get_instance()
-
-        Then in each view / endpoint:
-            dv = calc.get_deduct_value("alligator", "high", 12.5)
         """
         if cls._singleton is None:
-            cls._singleton = cls(models_path)
+            cls._singleton = cls(models_path, cdv_models_path)
         return cls._singleton
 
 

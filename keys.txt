@@ -10,3 +10,18 @@ Z
 alembic revision --autogenerate -m "set sample_unit_count default and update nulls"
 
 alembic upgrade head
+
+
+
+
+what about pothole. also it should accepts param of 
+
+```python
+
+px_per_mm
+
+```
+
+to convert to mm
+
+use typical image reading example not synthetic example

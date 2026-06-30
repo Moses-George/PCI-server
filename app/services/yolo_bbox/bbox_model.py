@@ -1,6 +1,7 @@
+from collections.abc import Callable
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, Optional
 import time
 from app.core.models import BBOX_MODEL, BBOX_MODEL_PATH
 import cv2
@@ -23,15 +24,20 @@ class DistressRecord:
     # ------------------------------------------------------------------
 
 
-def infer_image_bbox_model(image, px_per_mm: float):
+def infer_image_bbox_model(
+    image,
+    px_per_mm: float,
+    on_progress: Optional[Callable[[str, str], None]] = None,  # (step, detail))
+):
     """
-    Run the full pipeline on a single BGR image.
+    Run the full pipeline on a single BGR numpy image.
+    on_progress is an optional callback fired at each stage.
+    """
 
-    Returns
-    -------
-    annotated_image : np.ndarray
-    result          : DetectionResult
-    """
+    def progress(step: str, detail: str = ""):
+        if on_progress:
+            on_progress(step, detail)
+
     if image is None:
         raise ValueError("Could not load image")
     if not BBOX_MODEL_PATH:
@@ -47,6 +53,8 @@ def infer_image_bbox_model(image, px_per_mm: float):
     h, w = image_bgr.shape[:2]
     # annotated = image_bgr.copy()
 
+    # ── Stage 1: YOLO detection ───────────────────────────────────────────────
+    progress("detecting", "Running YOLO detection...")
     # ── Phase I: YOLOv8 Detection ─────────────────────────────────
     yolo_results = BBOX_MODEL.predict(
         source=image_bgr,
@@ -68,13 +76,16 @@ def infer_image_bbox_model(image, px_per_mm: float):
         xyxy = boxes.xyxy.cpu().numpy()  # [N, 4]
         confs = boxes.conf.cpu().numpy()  # [N]
         clsids = boxes.cls.cpu().numpy().astype(int)  # [N]
+        total = len(xyxy)
+
+        progress("analysing", f"Analysing {total} detection(s)...")
 
         for i in range(len(xyxy)):
             x1, y1, x2, y2 = map(int, xyxy[i])
             conf_val = float(confs[i])
             cls_id = int(clsids[i])
             cls_name = CLASS_NAMES[cls_id] if cls_id < len(CLASS_NAMES) else "unknown"
-            print(cls_name)
+            progress("analysing", f"Processing detection {i + 1}/{total}: {cls_name}")
 
             # ── Phase II: Width estimation ────────────────────────
             crop = image_bgr[max(0, y1) : min(h, y2), max(0, x1) : min(w, x2)]
@@ -111,4 +122,9 @@ def infer_image_bbox_model(image, px_per_mm: float):
                 )
             )
 
+    else:
+        progress("complete", "No detections found")
+        return detections, records, annotated
+
+    progress("uploading", f"Uploading results ({len(records)} distresses found)...")
     return detections, records, annotated

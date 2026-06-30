@@ -10,6 +10,7 @@ from app.models.sample_unit import SampleUnit
 from app.models.section import Section
 from app.models.network import Network
 from app.schemas.pci import PCIResponse
+from app.schemas.sample_unit import SampleUnitResponse
 from app.schemas.section import (
     SectionCreate,
     SectionUpdate,
@@ -30,18 +31,22 @@ async def get_all_sections(db: AsyncSession = Depends(get_db)):
     return result.scalars().all()
 
 
-@router.get("/{section_id}", response_model=SectionWithSUsResponse)
+@router.get("/{section_id}", response_model=SectionResponse)
 async def get_section(section_id: UUID, db: AsyncSession = Depends(get_db)):
-    stmt = (
-        select(Section)
-        .where(Section.id == section_id)
-        .options(
-            selectinload(Section.sample_units).selectinload(SampleUnit.detections),
-            selectinload(Section.sample_units).selectinload(SampleUnit.images),
-        )
-    )
-    result = await db.execute(stmt)
-    section = result.scalar_one_or_none()
+    # stmt = (
+    #     select(Section)
+    #     .where(Section.id == section_id)
+    #     .options(
+    #         selectinload(Section.sample_units).selectinload(SampleUnit.detections),
+    #         selectinload(Section.sample_units).selectinload(SampleUnit.images),
+    #     )
+    # )
+    # result = await db.execute(stmt)
+    # section = result.scalar_one_or_none()
+    # if not section:
+    #     raise HTTPException(status_code=404, detail="Section not found")
+        # Verify section exists
+    section = await db.get(Section, section_id)
     if not section:
         raise HTTPException(status_code=404, detail="Section not found")
     return section
@@ -111,7 +116,31 @@ async def delete_section(section_id: UUID, db: AsyncSession = Depends(get_db)):
     await db.commit()
 
 
-# GET, PUT, DELETE for a single section
+@router.get("/{section_id}/sample-units", response_model=List[SampleUnitResponse])
+async def get_section_sample_units(
+    section_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    # skip: int = 0,
+    # limit: int = 20,
+):
+    # Verify section exists
+    section = await db.get(Section, section_id)
+    if not section:
+        raise HTTPException(status_code=404, detail="Section not found")
+
+    stmt = (
+        select(SampleUnit)
+        .where(SampleUnit.section_id == section_id)
+        .options(
+            selectinload(SampleUnit.detections),
+            selectinload(SampleUnit.images),
+        )
+        .order_by(SampleUnit.created_at.desc())
+        # .offset(skip)
+        # .limit(limit)
+    )
+    result = await db.execute(stmt)
+    return result.scalars().all()
 
 
 @router.get("/{section_id}/calc_pci", response_model=PCIResponse)

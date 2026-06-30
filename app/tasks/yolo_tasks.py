@@ -1,9 +1,15 @@
-from collections import Counter 
+from collections import Counter
 import logging
 from pathlib import Path
 from app.core.celery_app import celery_app
 from app.core.cloudinary_client import upload_numpy_image_to_cloudinary_sync
 from app.services.image_service import save_image_record_sync
+from app.core.inference_events import (
+    publish_processing,
+    publish_done,
+    publish_failed,
+    publish_inference_event,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,11 +71,13 @@ def run_yolo_inference(self, sample_unit_id: str):
 
             if not original:
                 _mark_failed(sample_unit_id)
+                publish_failed(sample_unit_id, "No original image found")
                 return {"status": "error", "detail": "No original image record"}
 
             # Mark as processing
             sample.inference_status = "processing"
             db.commit()
+            publish_processing(sample_unit_id, "started", "Downloading image...")
 
             # Download image bytes from Cloudinry public URL
             response = requests.get(original.public_url, timeout=30)
@@ -80,9 +88,15 @@ def run_yolo_inference(self, sample_unit_id: str):
             if image is None:
                 raise ValueError("Could not decode image from Cloudinry")
 
+            # ── Run YOLO with progress callback ───────────────────────────────
+            def on_progress(step: str, detail: str):
+                publish_processing(sample_unit_id, step, detail)
+
             # Run YOLO (blocking is fine here — we're in a worker process)
             detections, records, annotated = infer_image_bbox_model(
-                image, sample.pixel_to_mm_factor
+                image,
+                sample.pixel_to_mm_factor,
+                on_progress=on_progress,
             )
 
             if not records:
@@ -91,8 +105,11 @@ def run_yolo_inference(self, sample_unit_id: str):
                 print("No detections")
                 sample.inference_status = "done"
                 db.commit()
+                publish_done(sample_unit_id, detection_count=0)
                 return {"status": "done", "sample_unit_id": sample_unit_id}
 
+            # ── Upload annotated image ────────────────────────────────────────
+            publish_processing(sample_unit_id, "uploading", "Saving annotated image...")
             annotated_result = upload_numpy_image_to_cloudinary_sync(
                 image_array=annotated,
                 original_filename=original.original_filename,
@@ -107,6 +124,10 @@ def run_yolo_inference(self, sample_unit_id: str):
                 is_annotated=True,
             )
 
+            # ── Persist detections ────────────────────────────────────────────
+            publish_processing(
+                sample_unit_id, "saving", "Saving detections to database..."
+            )
             # Count occurrences of each class across all records
             class_counts = Counter(r.class_name for r in records)
 
@@ -132,10 +153,15 @@ def run_yolo_inference(self, sample_unit_id: str):
             sample.inference_status = "done"
             db.commit()
 
+            publish_done(sample_unit_id, detection_count=len(records))
+            logger.info(
+                f"Inference done for {sample_unit_id} — {len(records)} detections"
+            )
             return {"status": "done", "sample_unit_id": sample_unit_id}
 
     except Exception as exc:
         logger.exception(f"Inference failed for {sample_unit_id}: {exc}")
+        publish_failed(sample_unit_id, str(exc))
 
         if self.request.retries >= self.max_retries:
             # All retries exhausted

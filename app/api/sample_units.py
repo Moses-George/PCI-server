@@ -188,6 +188,7 @@ async def update_sample_unit(
 
     # 2. Build update dict from provided fields
     update_data = {}
+    update_data["inference_status"] = "pending"
     if name is not None:
         update_data["name"] = name
     if distress_type is not None:

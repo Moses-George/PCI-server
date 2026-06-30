@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from app.api import networks, sections, sample_units, pci, reports
+from app.api import networks, sections, sample_units, pci, reports, ws
+
 # from app.services.pci.pci_calculator import PCICalculator
 
 app = FastAPI(title="Pavement Management API", version="1.0.0")
@@ -18,6 +19,7 @@ app.add_middleware(
 )
 
 # Routers
+app.include_router(ws.router)
 app.include_router(networks.router)
 app.include_router(sections.router)
 app.include_router(sample_units.router)
