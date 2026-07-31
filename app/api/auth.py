@@ -10,7 +10,7 @@ from app.core.auth import (
     create_access_token,
 )
 from app.models.user import User
-from app.schemas.user import UserCreate, UserResponse, LoginRequest, TokenResponse
+from app.schemas.user import ChangePasswordRequest, UserCreate, UserResponse, LoginRequest, TokenResponse
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -49,6 +49,54 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
 
     token = create_access_token({"sub": str(user.id)})
     return TokenResponse(access_token=token, user=user)
+
+
+# @router.patch("/change-password", status_code=status.HTTP_200_OK)
+# async def change_password(
+#     payload: ChangePasswordRequest,
+#     db: AsyncSession = Depends(get_db),
+#     current_user: User = Depends(get_current_user),
+# ):
+#     if not verify_password(payload.current_password, current_user.password):
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED,
+#             detail="Current password is incorrect",
+#         )
+#     if payload.current_password == payload.new_password:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail="New password must be different from current password",
+#         )
+
+#     current_user.password = hash_password(payload.new_password)
+#     await db.commit()
+#     return {"detail": "Password updated successfully"}
+
+@router.patch("/change-password", status_code=status.HTTP_200_OK)
+async def change_password(
+    payload: ChangePasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(User).where(User.email == payload.email))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not verify_password(payload.current_password, user.password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Current password is incorrect",
+        )
+    if payload.current_password == payload.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from current password",
+        )
+
+    user.password = hash_password(payload.new_password)
+    await db.commit()
+    return {"detail": "Password updated successfully"}
 
 
 @router.get("/me", response_model=UserResponse)
