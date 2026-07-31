@@ -32,9 +32,22 @@ router = APIRouter(prefix="/sections", tags=["Sections"])
 
 
 @router.get("/", response_model=List[SectionResponse])
-async def get_all_sections(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Section).order_by(Section.created_at.desc()))
+async def get_all_sections(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Section)
+        .join(Network, Section.network_id == Network.id)
+        .where(Network.user_id == current_user.id)
+        .order_by(Section.created_at.desc())
+    )
     return result.scalars().all()
+
+# @router.get("/", response_model=List[SectionResponse])
+# async def get_all_sections(db: AsyncSession = Depends(get_db)):
+#     result = await db.execute(select(Section).order_by(Section.created_at.desc()))
+#     return result.scalars().all()
 
 
 @router.get("/{section_id}", response_model=SectionResponse)
