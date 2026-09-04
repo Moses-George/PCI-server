@@ -13,7 +13,7 @@ from app.models.pci_history import PCIHistory
 from app.schemas.pci import PCIResponse, PCIHistoryResponse
 # from app.services.pci.pci_calculator import calculate_pci_for_section
 
-router = APIRouter(prefix="/pci", tags=["PCI"])
+router = APIRouter(prefix="/api/pci", tags=["PCI"])
 
 
 @router.get("/section/{section_id}", response_model=PCIResponse)

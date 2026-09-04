@@ -19,7 +19,7 @@ from app.schemas.network import (
 )
 from app.services.image_service import delete_images_for_ids
 
-router = APIRouter(prefix="/networks", tags=["Networks"])
+router = APIRouter(prefix="/api/networks", tags=["Networks"])
 
 
 @router.get("/", response_model=List[NetworkWithSectionsResponse])

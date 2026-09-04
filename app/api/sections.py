@@ -28,7 +28,7 @@ from app.services.sec_reports.pdf_generator import generate_pci_report
 
 # from app.services.pci.pci_utilities import groupAndCalcDensity
 
-router = APIRouter(prefix="/sections", tags=["Sections"])
+router = APIRouter(prefix="/api/sections", tags=["Sections"])
 
 
 @router.get("/", response_model=List[SectionResponse])

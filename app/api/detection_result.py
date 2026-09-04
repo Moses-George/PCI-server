@@ -9,7 +9,7 @@ from app.models.sample_unit import SampleUnit
 from app.schemas.detection_result import DetectionResultResponse, DetectionResultUpdate
 from app.services.pci.pci_utilities import normalizeClass
 
-router = APIRouter(prefix="/detections", tags=["Detections"])
+router = APIRouter(prefix="/api/detections", tags=["Detections"])
 
 
 @router.delete("/{detection_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -32,7 +32,7 @@ from app.tasks.yolo_inference import run_yolo_inference
 logging.basicConfig(level=logging.INFO)
 
 
-router = APIRouter(prefix="/sample-units", tags=["Sample Units"])
+router = APIRouter(prefix="/api/sample-units", tags=["Sample Units"])
 
 
 def validate(image_file: UploadFile | None, distress_type, severity):

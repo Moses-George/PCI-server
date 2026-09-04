@@ -12,7 +12,7 @@ from app.core.auth import (
 from app.models.user import User
 from app.schemas.user import ChangePasswordRequest, UserCreate, UserResponse, LoginRequest, TokenResponse
 
-router = APIRouter(prefix="/auth", tags=["Auth"])
+router = APIRouter(prefix="/api/auth", tags=["Auth"])
 
 
 @router.post(

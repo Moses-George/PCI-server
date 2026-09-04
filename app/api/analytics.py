@@ -25,7 +25,7 @@ from app.schemas.dashboard import (
 )
 from app.schemas.pci import PCIHistoryResponse
 
-router = APIRouter(prefix="/analytics", tags=["Analytics"])
+router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
